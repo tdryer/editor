@@ -1,6 +1,6 @@
 import pytest
 
-from editor import Buffer
+from editor import Buffer, EditorGUI
 
 
 def test_buffer_init_from_text():
@@ -86,6 +86,27 @@ def test_buffer_set_text_nonexistent_col():
     with pytest.raises(ValueError):
         b.set_text(0, 0, 0, 4, 'a')
 
+
+def test_editorgui_wrap_text():
+    res = EditorGUI._get_wrapped_lines(['This is', 'a test.'], 5, 4)
+    assert list(res) == [
+        ['This ', 'is'],
+        ['a tes', 't.'],
+    ]
+    res = EditorGUI._get_wrapped_lines(['This is', 'a test.'], 5, 3)
+    assert list(res) == [
+        ['This ', 'is'],
+    ]
+    res = EditorGUI._get_wrapped_lines(['This is', 'a test.'], 5, 5)
+    assert list(res) == [
+        ['This ', 'is'],
+        ['a tes', 't.'],
+    ]
+    res = EditorGUI._get_wrapped_lines(['This is', ''], 5, 4)
+    assert list(res) == [
+        ['This ', 'is'],
+        [''],
+    ]
 
 #def test_buffer_insert():
 #    b = Buffer()
