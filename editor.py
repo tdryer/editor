@@ -75,8 +75,7 @@ class EditorGUI(object):
         self._buf = Buffer(text)
         self._row = 0
         self._col = 0
-        self._top_line_num = 1 # 1-indexed
-        self._bottom_line_num = None # 0-indexed
+        self._scroll_top = 0 # the first line number in the window
         self._mode = 'normal'
         self._message = ''
         self._will_exit = False
@@ -110,6 +109,59 @@ class EditorGUI(object):
         position = 'LN {}:{} '.format(self._row + 1, self._col + 1)
         self._stdscr.addstr(top, left + width - 1 - len(position), position,
                             curses.A_REVERSE)
+
+    def _get_line_rows(self, line_num, width):
+        """Return the wrapped rows for the given line."""
+        def wrap_text(text, width):
+            """Wrap string text into list of strings."""
+            if text == '':
+                yield ''
+            else:
+                for i in xrange(0, len(text), width):
+                    yield text[i:i + width]
+        if line_num < 0:
+            return [''] # TODO makes _scroll_bottom_to_top work
+        else:
+            return wrap_text(self._buf.get_lines()[line_num], width)
+
+    def _scroll_bottom_to_top(self, bottom, width, remaining):
+        """Return the first visible line's number so bottom line is visible.
+
+        Remaining is the height of the window
+        """
+        def verify(top):
+            rows = [list(self._get_line_rows(n, width))
+                    for n in range(top, bottom + 1)]
+            num_rows = sum(len(r) for r in rows)
+            assert top <= bottom, 'top line {} may not be below bottom {}'.format(top, bottom)
+            assert num_rows <= remaining, (
+                '{} rows between {} and {}, but only {} remaining. rows are {}'
+                .format(num_rows, top, bottom, remaining, rows))
+
+        n = len(list(self._get_line_rows(bottom, width)))
+        if remaining - n == 0:
+            verify(bottom)
+            return bottom
+        elif remaining - n < 0:
+            #verify(bottom + 1) # TODO enable this, may need rewrite
+            return bottom + 1
+        else:
+            top = self._scroll_bottom_to_top(bottom - 1, width, remaining - n)
+            verify(top)
+            return top
+
+    def _scroll_to(self, line_num, width, row_height):
+        """Scroll so the line with the given number is visible."""
+        # lowest scroll top that would still keep line_num visible
+        lowest_top = self._scroll_bottom_to_top(line_num, width, row_height)
+
+        if line_num < self._scroll_top:
+            # scroll up until line_num is visible
+            self._scroll_top = line_num
+        elif self._scroll_top < lowest_top:
+            # scroll down to until line_num is visible
+            self._scroll_top = lowest_top
+
 
     @staticmethod
     def _get_wrapped_lines(lines, width, max_lines):
@@ -149,12 +201,16 @@ class EditorGUI(object):
         gutter_width = max(3, len(str(highest_line_num))) + 1
         line_width = width - gutter_width # width to which text is wrapped
         cursor_y, cursor_x = None, None # where the cursor will be drawn
+
+        # set self._scroll_top so the cursor is visible
+        self._scroll_to(self._row, line_width, height)
+
         # wrapped lines from the top of the screen
-        unwrapped_lines = self._buf.get_lines()[self._top_line_num - 1:]
+        unwrapped_lines = self._buf.get_lines()[self._scroll_top:]
         wrapped_lines = self._get_wrapped_lines(unwrapped_lines, line_width,
                                                  height)
         numbered_wrapped_lines = list(enumerate(wrapped_lines,
-                                                self._top_line_num - 1))
+                                                self._scroll_top))
         drawable_rows = range(top, top + height)
 
         current_y = top
@@ -189,11 +245,10 @@ class EditorGUI(object):
 
         # position the cursor
         # TODO: scrolling down to wrapped line hits this
-        assert (cursor_x is not None and cursor_y is not None,
+        assert cursor_x != None and cursor_y != None, (
                 "Could not place cursor on line {}, lines {} to {} are shown"
-                .format(self._row, self._top_line_num - 1,
-                        self._bottom_line_num))
-        self._stdscr.move(cursor_y, cursor_x)
+                .format(self._row, self._scroll_top, self._bottom_line_num))
+        self._stdscr.move(cursor_y + 0, cursor_x + 0)
 
     def _handle_normal_keypress(self, char):
         if char == ord('q'): # quit
@@ -284,15 +339,6 @@ class EditorGUI(object):
             if self._mode == 'insert':
                 num_cols += 1
             self._col = min(num_cols - 1, max(0, self._col))
-
-            # scroll if necessary
-            # TODO: if the last line gets longer and wraps, need to scroll down
-            if self._row > self._bottom_line_num:
-                # TODO: need to scroll down enough lines so the next line can
-                # be shown even if it is wrapped to multiple lines
-                self._top_line_num += 1
-            elif self._row < self._top_line_num - 1:
-                self._top_line_num -= 1
 
 
 @contextmanager
