@@ -98,7 +98,7 @@ class EditorGUI(object):
         height = self._stdscr.getmaxyx()[0]
         width = self._stdscr.getmaxyx()[1]
         self._draw_status_line(0, height - 1, width)
-        self._draw_text(0, 0, width, height - 1) # TODO should be height - 1
+        self._draw_text(0, 0, width, height - 1)
         self._stdscr.refresh()
 
     def _draw_status_line(self, left, top, width):
@@ -110,8 +110,12 @@ class EditorGUI(object):
         self._stdscr.addstr(top, left + width - 1 - len(position), position,
                             curses.A_REVERSE)
 
-    def _get_line_rows(self, line_num, width):
-        """Return the wrapped rows for the given line."""
+    def _get_num_wrapped_lines(self, line_num, width):
+        """Return the number of lines the given line number wraps to."""
+        return len(self._get_wrapped_lines(line_num, width))
+
+    def _get_wrapped_lines(self, line_num, width):
+        """Return the wrapped lines for the given line number."""
         def wrap_text(text, width):
             """Wrap string text into list of strings."""
             if text == '':
@@ -119,15 +123,13 @@ class EditorGUI(object):
             else:
                 for i in xrange(0, len(text), width):
                     yield text[i:i + width]
-        if line_num < 0:
-            return [''] # TODO makes _scroll_bottom_to_top work
-        else:
-            return wrap_text(self._buf.get_lines()[line_num], width)
+        assert line_num >= 0, 'line_num must be > 0'
+        return list(wrap_text(self._buf.get_lines()[line_num], width))
 
     def _scroll_bottom_to_top(self, bottom, width, height):
         """Return the first visible line's number so bottom line is visible."""
         def verify(top):
-            rows = [list(self._get_line_rows(n, width))
+            rows = [list(self._get_wrapped_lines(n, width))
                     for n in range(top, bottom + 1)]
             num_rows = sum(len(r) for r in rows)
             assert top <= bottom, ('top line {} may not be below bottom {}'
@@ -138,13 +140,13 @@ class EditorGUI(object):
 
         top, next_top = bottom, bottom
         # distance in number of lines between top and bottom
-        distance = len(list(self._get_line_rows(bottom, width)))
+        distance = self._get_num_wrapped_lines(bottom, width)
 
         # move top upwards as far as possible
         while next_top >= 0 and distance <= height:
             top = next_top
             next_top -= 1
-            distance += len(list(self._get_line_rows(next_top, width)))
+            distance += self._get_num_wrapped_lines(max(0, next_top), width)
 
         verify(top)
         return top
@@ -163,7 +165,7 @@ class EditorGUI(object):
 
 
     @staticmethod
-    def _get_wrapped_lines(lines, width, max_lines):
+    def _wrap_lines(lines, width, max_lines):
         """Wrap list of lines into list of list of lines wrapped to width.
 
         Returns a list of lists of strings. Each sub-list represents one line
@@ -206,8 +208,7 @@ class EditorGUI(object):
 
         # wrapped lines from the top of the screen
         unwrapped_lines = self._buf.get_lines()[self._scroll_top:]
-        wrapped_lines = self._get_wrapped_lines(unwrapped_lines, line_width,
-                                                 height)
+        wrapped_lines = self._wrap_lines(unwrapped_lines, line_width, height)
         numbered_wrapped_lines = list(enumerate(wrapped_lines,
                                                 self._scroll_top))
         drawable_rows = range(top, top + height)
