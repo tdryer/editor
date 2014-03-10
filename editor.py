@@ -163,38 +163,6 @@ class EditorGUI(object):
             # scroll down to until line_num is visible
             self._scroll_top = lowest_top
 
-
-    @staticmethod
-    def _wrap_lines(lines, width, max_lines):
-        """Wrap list of lines into list of list of lines wrapped to width.
-
-        Returns a list of lists of strings. Each sub-list represents one line
-        which has been wrapped over multiple lines at the given width.
-
-        max_lines restricts the total number of lines returned.
-
-        Empty lines are [''].
-        """
-        def wrap_text(text, width):
-            """Wrap string text into list of strings."""
-            if text == '':
-                yield ''
-            else:
-                for i in xrange(0, len(text), width):
-                    yield text[i:i + width]
-        res = []
-        lines_remaining = max_lines
-        for line in lines:
-            wrapped_lines = list(wrap_text(line, width))
-            if len(wrapped_lines) <= lines_remaining:
-                res.append(wrapped_lines)
-                lines_remaining -= len(wrapped_lines)
-            else:
-                # there's more lines, but can't fit all wrapped lines in
-                return res
-        # there's no more lines
-        return res
-
     def _draw_text(self, left, top, width, height):
         """Draw the text area."""
         # TODO: handle single lines that occupy the entire window
@@ -203,51 +171,48 @@ class EditorGUI(object):
         line_width = width - gutter_width # width to which text is wrapped
         cursor_y, cursor_x = None, None # where the cursor will be drawn
 
-        # set self._scroll_top so the cursor is visible
+        # set scroll_top so the cursor is visible
         self._scroll_to(self._row, line_width, height)
 
-        # wrapped lines from the top of the screen
-        unwrapped_lines = self._buf.get_lines()[self._scroll_top:]
-        wrapped_lines = self._wrap_lines(unwrapped_lines, line_width, height)
-        numbered_wrapped_lines = list(enumerate(wrapped_lines,
-                                                self._scroll_top))
-        drawable_rows = range(top, top + height)
+        line_nums = range(self._scroll_top, highest_line_num)
+        cur_y = top
+        trailing_char = '~'
 
-        current_y = top
-        for num, logical_line in numbered_wrapped_lines:
+        # want to iterate on lines so dealing with wrapped lines is easy
+        for line_num in line_nums:
             # calculate cursor position if cursor must be on this line
-            if num == self._row:
-                cursor_y = current_y + self._col / line_width
+            if line_num == self._row:
+                cursor_y = cur_y + self._col / line_width
                 cursor_x = left + gutter_width + self._col % line_width
-            # draw the gutter and first line
-            gutter = '{} '.format(num + 1).rjust(gutter_width)
-            self._stdscr.addstr(current_y, left, gutter, curses.A_REVERSE)
-            self._stdscr.addstr(current_y, left + len(gutter), logical_line[0])
-            current_y += 1
-            # draw wrapped lines, if any
-            for wrapped_line in logical_line[1:]:
-                gutter = ' ' * gutter_width
-                self._stdscr.addstr(current_y, left, gutter, curses.A_REVERSE)
-                self._stdscr.addstr(current_y, left + len(gutter), wrapped_line)
-                current_y += 1
 
-        # TODO draw @ for incomplete wrapped lines
+            # if there are no more rows left, break
+            num_remaining_rows = top + height - cur_y
+            if num_remaining_rows == 0:
+                break
 
-        self._bottom_line_num = numbered_wrapped_lines[-1][0]
+            # if all the wrapped lines can't fit on screen, break
+            wrapped_lines = self._get_wrapped_lines(line_num, line_width)
+            if len(wrapped_lines) > num_remaining_rows:
+                trailing_char = '@'
+                break
 
-        # draw gutter for empty lines (without reverse colour)
-        empty_lines = range(current_y, top + height)
-        self._bottom_line_num += len(empty_lines)
-        for _ in empty_lines:
-            gutter = '~'.ljust(gutter_width)
-            self._stdscr.addstr(current_y, left, gutter)
-            current_y += 1
+            # draw all the wrapped lines
+            for n, wrapped_line in enumerate(wrapped_lines):
+                if n == 0:
+                    gutter = '{} '.format(line_num + 1).rjust(gutter_width)
+                else:
+                    gutter = ' ' * gutter_width
+                self._stdscr.addstr(cur_y, left, gutter, curses.A_REVERSE)
+                self._stdscr.addstr(cur_y, left + len(gutter), wrapped_line)
+                cur_y += 1
 
-        # position the cursor
-        # TODO: scrolling down to wrapped line hits this
-        assert cursor_x != None and cursor_y != None, (
-                "Could not place cursor on line {}, lines {} to {} are shown"
-                .format(self._row, self._scroll_top, self._bottom_line_num))
+        # draw empty lines
+        for cur_y in range(cur_y, top + height):
+            gutter = trailing_char.ljust(gutter_width)
+            self._stdscr.addstr(cur_y, left, gutter)
+
+        # move the cursor
+        assert cursor_x != None and cursor_y != None
         self._stdscr.move(cursor_y + 0, cursor_x + 0)
 
     def _handle_normal_keypress(self, char):
