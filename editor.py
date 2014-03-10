@@ -124,31 +124,30 @@ class EditorGUI(object):
         else:
             return wrap_text(self._buf.get_lines()[line_num], width)
 
-    def _scroll_bottom_to_top(self, bottom, width, remaining):
-        """Return the first visible line's number so bottom line is visible.
-
-        Remaining is the height of the window
-        """
+    def _scroll_bottom_to_top(self, bottom, width, height):
+        """Return the first visible line's number so bottom line is visible."""
         def verify(top):
             rows = [list(self._get_line_rows(n, width))
                     for n in range(top, bottom + 1)]
             num_rows = sum(len(r) for r in rows)
-            assert top <= bottom, 'top line {} may not be below bottom {}'.format(top, bottom)
-            assert num_rows <= remaining, (
+            assert top <= bottom, ('top line {} may not be below bottom {}'
+                                   .format(top, bottom))
+            assert num_rows <= height, (
                 '{} rows between {} and {}, but only {} remaining. rows are {}'
-                .format(num_rows, top, bottom, remaining, rows))
+                .format(num_rows, top, bottom, height, rows))
 
-        n = len(list(self._get_line_rows(bottom, width)))
-        if remaining - n == 0:
-            verify(bottom)
-            return bottom
-        elif remaining - n < 0:
-            #verify(bottom + 1) # TODO enable this, may need rewrite
-            return bottom + 1
-        else:
-            top = self._scroll_bottom_to_top(bottom - 1, width, remaining - n)
-            verify(top)
-            return top
+        top, next_top = bottom, bottom
+        # distance in number of lines between top and bottom
+        distance = len(list(self._get_line_rows(bottom, width)))
+
+        # move top upwards as far as possible
+        while next_top >= 0 and distance <= height:
+            top = next_top
+            next_top -= 1
+            distance += len(list(self._get_line_rows(next_top, width)))
+
+        verify(top)
+        return top
 
     def _scroll_to(self, line_num, width, row_height):
         """Scroll so the line with the given number is visible."""
