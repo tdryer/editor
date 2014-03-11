@@ -1,6 +1,6 @@
 import pytest
 
-from editor import Buffer
+from editor.__main__ import Buffer
 
 
 def test_buffer_init_from_text():
