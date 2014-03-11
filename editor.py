@@ -3,6 +3,7 @@
 import curses
 from sys import argv
 from contextlib import contextmanager
+import os
 
 
 class Buffer(object):
@@ -56,13 +57,13 @@ class EditorGUI(object):
     def __init__(self, stdscr, filename):
         self._stdscr = stdscr
 
-        # load file into buffer if given
-        if filename is None:
-            text = 'This is\na test.'
-        else:
+        # if filename already exists, try to load from it
+        text = ''
+        if filename != None and os.path.isfile(filename):
             with open(filename) as f:
                 text = f.read()
 
+        self._filename = filename
         self._buf = Buffer(text)
         self._row = 0
         self._col = 0
@@ -264,6 +265,16 @@ class EditorGUI(object):
             self._buf.set_text(self._row, 0, self._row, 0, '\n')
             self._col = 0
             self._mode = "insert"
+        elif char == ord('w'): # write file
+            if self._filename == None:
+                self._message = 'Can\'t write file without filename.'
+            else:
+                try:
+                    with open(self._filename, 'w') as f:
+                        f.write('\n'.join(self._buf.get_lines()))
+                except IOError as e:
+                    self._message = ('Failed to write file \'{}\': {}'
+                                     .format(self._filename, e))
         else:
             self._message = 'Unknown key: {}'.format(char)
 
