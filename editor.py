@@ -1,13 +1,4 @@
-"""Simple text editor with VIM-like controls.
-
-TODO basic but usable text editor:
-    open command
-    write command
-    handle tabs
-    better get_lines method
-    handle long lines
-    performance testing
-"""
+"""Simple text editor with VIM-like controls."""
 
 import curses
 from sys import argv
@@ -103,6 +94,7 @@ class EditorGUI(object):
 
     def _draw_status_line(self, left, top, width):
         """Draw the status line."""
+        # TODO: can't write to bottom right cell
         mode = '{} {}'.format(self._mode.upper(),
                               self._message).ljust(width - 1)
         self._stdscr.addstr(top, left, mode, curses.A_REVERSE)
@@ -114,7 +106,7 @@ class EditorGUI(object):
         """Return the number of lines the given line number wraps to."""
         return len(self._get_wrapped_lines(line_num, width))
 
-    def _get_wrapped_lines(self, line_num, width):
+    def _get_wrapped_lines(self, line_num, width, convert_nonprinting=True):
         """Return the wrapped lines for the given line number."""
         def wrap_text(text, width):
             """Wrap string text into list of strings."""
@@ -124,7 +116,10 @@ class EditorGUI(object):
                 for i in xrange(0, len(text), width):
                     yield text[i:i + width]
         assert line_num >= 0, 'line_num must be > 0'
-        return list(wrap_text(self._buf.get_lines()[line_num], width))
+        line = self._buf.get_lines()[line_num]
+        if convert_nonprinting:
+            line = self._convert_nonprinting(line)
+        return list(wrap_text(line, width))
 
     def _scroll_bottom_to_top(self, bottom, width, height):
         """Return the first visible line's number so bottom line is visible."""
@@ -163,6 +158,20 @@ class EditorGUI(object):
             # scroll down to until line_num is visible
             self._scroll_top = lowest_top
 
+    def _convert_nonprinting(self, text):
+        """Replace nonprinting character in text."""
+        # TODO: it would be nice if these could be highlighted when displayed
+        res = []
+        for char in text:
+            i = ord(char)
+            if char == '\t':
+                res.append('->  ')
+            elif i < 32 or i > 126:
+                res.append('<{}>'.format(hex(i)[2:]))
+            else:
+                res.append(char)
+        return ''.join(res)
+
     def _draw_text(self, left, top, width, height):
         """Draw the text area."""
         # TODO: handle single lines that occupy the entire window
@@ -180,10 +189,6 @@ class EditorGUI(object):
 
         # want to iterate on lines so dealing with wrapped lines is easy
         for line_num in line_nums:
-            # calculate cursor position if cursor must be on this line
-            if line_num == self._row:
-                cursor_y = cur_y + self._col / line_width
-                cursor_x = left + gutter_width + self._col % line_width
 
             # if there are no more rows left, break
             num_remaining_rows = top + height - cur_y
@@ -195,6 +200,16 @@ class EditorGUI(object):
             if len(wrapped_lines) > num_remaining_rows:
                 trailing_char = '@'
                 break
+
+            # calculate cursor position if cursor must be on this line
+            if line_num == self._row:
+                lines = self._get_wrapped_lines(line_num, line_width,
+                                                convert_nonprinting=False)
+                real_col = len(self._convert_nonprinting(
+                    ''.join(lines)[:self._col])
+                )
+                cursor_y = cur_y + real_col / line_width
+                cursor_x = left + gutter_width + real_col % line_width
 
             # draw all the wrapped lines
             for n, wrapped_line in enumerate(wrapped_lines):
