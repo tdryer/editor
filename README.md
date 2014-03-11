@@ -6,7 +6,7 @@ Features:
 * some vim-like movement commands
 * line wrapping
 * scrolling
-* non-printing character display# Features
+* non-printing character display
 
 To run:
 
