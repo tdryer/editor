@@ -1,28 +1,25 @@
-"""Simple text editor with VIM-like controls."""
+"""Simple curses-based text editor."""
 
-import curses
-from sys import argv
 from contextlib import contextmanager
+from sys import argv
+import curses
 import os
 
 
 class Buffer(object):
     """The basic data structure for editable text.
 
-    The buffer is line and row oriented. Line and row numbers start with 0. A
-    buffer always has at least one line. All positions within a buffer specify
+    The buffer is column and row oriented. Column and row numbers start with 0.
+    A buffer always has at least one row. All positions within a buffer specify
     a position between characters.
-
-    This class has a minimal public interface that is meant to be wrapped by
-    higher-level operations.
     """
 
     def __init__(self, text=''):
+        """Create a new Buffer, optionally initialized with text."""
         self._lines = text.split('\n')
 
     def get_lines(self):
         """Return list of lines in the buffer."""
-        # TODO: return variable range of lines
         return list(self._lines) # return a copy
 
     def _check_point(self, row, col):
@@ -37,16 +34,14 @@ class Buffer(object):
         """Set the text in the given range.
 
         The end of the range is exclusive (to allow inserting text without
-        removing a single character.
+        removing a single character). Column numbers are positions between
+        characters.
 
-        Example of setting characters 0-3:
-         A B C D
-        0 1 2 3 4
-        |-----|
+        Raises ValueError if the range is invalid.
         """
+        # TODO check that point2 is after or the same as point1
         self._check_point(row1, col1)
         self._check_point(row2, col2)
-        # TODO check that point2 is after or the same as point1
 
         line = self._lines[row1][:col1] + text + self._lines[row2][col2:]
         self._lines[row1:row2+1] = line.split('\n')
@@ -55,6 +50,7 @@ class Buffer(object):
 class EditorGUI(object):
 
     def __init__(self, stdscr, filename):
+        """Create the GUI with curses screen and optional filename to load."""
         self._stdscr = stdscr
 
         # if filename already exists, try to load from it
@@ -86,6 +82,7 @@ class EditorGUI(object):
         return gutter_width
 
     def _draw(self):
+        """Draw the GUI."""
         self._stdscr.erase()
         height = self._stdscr.getmaxyx()[0]
         width = self._stdscr.getmaxyx()[1]
@@ -125,6 +122,7 @@ class EditorGUI(object):
     def _scroll_bottom_to_top(self, bottom, width, height):
         """Return the first visible line's number so bottom line is visible."""
         def verify(top):
+            """Verify the result of the parent function is correct."""
             rows = [list(self._get_wrapped_lines(n, width))
                     for n in range(top, bottom + 1)]
             num_rows = sum(len(r) for r in rows)
@@ -159,7 +157,8 @@ class EditorGUI(object):
             # scroll down to until line_num is visible
             self._scroll_top = lowest_top
 
-    def _convert_nonprinting(self, text):
+    @staticmethod
+    def _convert_nonprinting(text):
         """Replace nonprinting character in text."""
         # TODO: it would be nice if these could be highlighted when displayed
         res = []
@@ -188,7 +187,6 @@ class EditorGUI(object):
         cur_y = top
         trailing_char = '~'
 
-        # want to iterate on lines so dealing with wrapped lines is easy
         for line_num in line_nums:
 
             # if there are no more rows left, break
@@ -227,11 +225,12 @@ class EditorGUI(object):
             gutter = trailing_char.ljust(gutter_width)
             self._stdscr.addstr(cur_y, left, gutter)
 
-        # move the cursor
+        # position the cursor
         assert cursor_x != None and cursor_y != None
         self._stdscr.move(cursor_y + 0, cursor_x + 0)
 
     def _handle_normal_keypress(self, char):
+        """Handle a keypress in normal mode."""
         if char == ord('q'): # quit
             self._will_exit = True
         elif char == ord('j'): # down
@@ -247,17 +246,18 @@ class EditorGUI(object):
         elif char == ord('$'): # move to end of line
             cur_line_len = len(self._buf.get_lines()[self._row])
             self._col = cur_line_len - 1
-        elif char == ord('x'):
+        elif char == ord('x'): # delete a character
             self._buf.set_text(self._row, self._col, self._row,
                                 self._col + 1, '')
-        elif char == ord('i'):
+        elif char == ord('i'): # enter insert mode
             self._mode = "insert"
-        elif char == ord('a'):
+        elif char == ord('a'): # enter insert mode after cursor
             self._mode = "insert"
             self._col += 1
         elif char == ord('o'): # insert line after current
             cur_line_len = len(self._buf.get_lines()[self._row])
-            self._buf.set_text(self._row, cur_line_len, self._row, cur_line_len, '\n')
+            self._buf.set_text(self._row, cur_line_len, self._row,
+                               cur_line_len, '\n')
             self._row += 1
             self._col = 0
             self._mode = "insert"
@@ -279,6 +279,7 @@ class EditorGUI(object):
             self._message = 'Unknown key: {}'.format(char)
 
     def _handle_insert_keypress(self, char):
+        """Handle a keypress in insert mode."""
         if char == 27:
             # leaving insert mode moves cursor left
             if self._mode == 'insert':
@@ -301,7 +302,8 @@ class EditorGUI(object):
                                     self._col, '')
                 self._col -= 1
         else:
-            self._message = 'inserted {} at row {} col {}'.format(char, self._row, self._col)
+            self._message = ('inserted {} at row {} col {}'
+                             .format(char, self._row, self._col))
             self._buf.set_text(self._row, self._col, self._row,
                                 self._col, chr(char))
             if chr(char) == '\n':
@@ -311,6 +313,7 @@ class EditorGUI(object):
                 self._col += 1
 
     def main(self):
+        """GUI main loop."""
         while not self._will_exit:
             self._draw()
             self._message = ''
@@ -334,6 +337,7 @@ class EditorGUI(object):
 
 @contextmanager
 def use_curses():
+    """Context manager to set up and tear down curses."""
     stdscr = curses.initscr()
     curses.noecho() # do not echo keys
     curses.cbreak() # don't wait for enter
@@ -348,11 +352,11 @@ def use_curses():
 
 
 def curses_main():
+    """Start the curses GUI."""
     filename = argv[1] if len(argv) > 1 else None
     with use_curses() as stdscr:
         gui = EditorGUI(stdscr, filename)
         gui.main()
-    print gui._buf.get_lines()
 
 
 if __name__ == '__main__':
